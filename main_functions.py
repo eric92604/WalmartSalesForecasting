@@ -1,7 +1,5 @@
 import os
 import sys
-import re
-from pathlib import Path
 import logging
 import time
 import numpy as np
@@ -360,7 +358,7 @@ class ModelTrainer:
         tft = TemporalFusionTransformer.from_dataset(
             self.training_dataset,
             # not meaningful for finding the learning rate but otherwise very important
-            learning_rate=0.177827,
+            learning_rate=0.03,
             hidden_size=hidden_size,  # most important hyperparameter apart from learning rate
             # number of attention heads. Set to up to 4 for large datasets
             attention_head_size=1,
@@ -402,30 +400,30 @@ class ModelTrainer:
             self.val_dataloader,
             model_path="optuna_test",
             n_trials=200,
-            max_epochs=50,
+            max_epochs=20,
             gradient_clip_val_range=(0.01, 1.0),
             hidden_size_range=(8, 128),
             hidden_continuous_size_range=(8, 128),
             attention_head_size_range=(1, 4),
             learning_rate_range=(0.001, 0.1),
             dropout_range=(0.1, 0.3),
-            trainer_kwargs=dict(limit_train_batches=30),
+            trainer_kwargs=dict(limit_train_batches=50),
             reduce_on_plateau_patience=4,
             use_learning_rate_finder=False,
             # use Optuna to find ideal learning rate or use in-built learning rate finder
         )
-
-        with open("test_study.pkl", "wb") as fout:
-            pickle.dump(study, fout)  # save study results
 
         logging.info(
             f"Optimal hyperparameters found in {time.time() - start_time:.2f} seconds."
         )
         logging.info(study.best_trial.params)  # show best hyperparameters
 
+        with open("test_study.pkl", "wb") as fout:
+            pickle.dump(study, fout)  # save study results
+
         return study.best_trial.params
 
-    def train_model(self, hidden_size=8, hidden_continuous_size=8):
+    def train_model(self, optimal_lr, hidden_size=8, hidden_continuous_size=8):
         # Train the TemporalFusionTransformer model w/ seed 42
 
         start_time = time.time()
@@ -434,7 +432,7 @@ class ModelTrainer:
         tft = TemporalFusionTransformer.from_dataset(
             self.training_dataset,
             # not meaningful for finding the learning rate but otherwise very important
-            learning_rate=0.03,
+            learning_rate=optimal_lr,
             hidden_size=hidden_size,  # most important hyperparameter apart from learning rate
             # number of attention heads. Set to up to 4 for large datasets
             attention_head_size=1,
@@ -445,9 +443,8 @@ class ModelTrainer:
             log_interval=1,
         )
         logging.info(f"Number of parameters in network: {tft.size() / 1e3:.1f}k")
-        logging.info(f"Model trained in {time.time() - start_time:.2f} seconds.")
         self.trainer.fit(tft, self.train_dataloader, self.val_dataloader)
-
+        logging.info(f"Model trained in {time.time() - start_time:.2f} seconds.")
         return
 
 
@@ -517,9 +514,10 @@ def main(
         training_timeseriesdataset, trainer, train_dataloader, val_dataloader
     )
 
-    optimal_lr = 0.03   # Initialize a reasonable learning rate
+    optimal_lr = 0.03    # Initialize a reasonable learning rate
     if find_optimal_lr:
         try:
+            logging.info(f"Finding optimal learning rate.")
             optimal_lr = model_trainer.optimal_learning_rate(
                 hidden_size=hidden_size,
                 hidden_continuous_size=hidden_continuous_size,
@@ -534,8 +532,9 @@ def main(
     logging.info(f"Learning Rate set to {optimal_lr}")
 
     if find_optimal_hyperparameters:
+        logging.info(f"Finding optimal hyperparameters")
         best_trial_params = model_trainer.optimize_hyperparameters()
-    model_trainer.train_model()  # Fit network
+    model_trainer.train_model(optimal_lr)  # Fit network
 
     # load the best model according to the validation loss
 

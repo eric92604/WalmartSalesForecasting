@@ -16,13 +16,12 @@ if __name__ == "__main__":
         main_functions.main(source_dir,
                             timeseriesdataset_from_file=True,
                             find_optimal_lr=False,
-                            find_optimal_hyperparameters=False,
-                            batch_size=512,
+                            find_optimal_hyperparameters=True,
+                            batch_size=128,
                             worker_size=4,
                             persistent_workers=True,
-                            num_epochs=1
+                            num_epochs=5
                             )
     except Exception as err:
         logging.info({err})
         logging.error(traceback.format_exc())
-

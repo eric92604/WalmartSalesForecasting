@@ -2,3 +2,9 @@
 /lightning_logs/
 /.idea/
 /.idea
+*.ckpt
+data/sales_train_evaluation_test.csv
+data/sample_submission.csv
+*.log
+training_timeseriesdataset
+validation_timeseriesdataset
