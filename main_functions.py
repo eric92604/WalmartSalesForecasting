@@ -7,7 +7,9 @@ import pandas as pd
 import pickle
 import torch
 import lightning.pytorch as pl
+from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.tuner.tuning import Tuner
+from lightning.pytorch.loggers import TensorBoardLogger
 from pytorch_forecasting import (
     Baseline,
     TemporalFusionTransformer,
@@ -17,7 +19,7 @@ from pytorch_forecasting import (
 from pytorch_forecasting.data import GroupNormalizer
 from pytorch_forecasting.metrics import MAE, SMAPE, PoissonLoss, QuantileLoss
 from pytorch_forecasting.models.temporal_fusion_transformer.tuning import (
-    optimize_hyperparameters
+    optimize_hyperparameters,
 )
 
 
@@ -36,9 +38,9 @@ class LoggerSetup:
         logging.getLogger("matplotlib.font_manager").setLevel(
             logging.ERROR
         )  # Suppress debug messages from matplotlib
-        logging.getLogger('PIL').setLevel(
+        logging.getLogger("PIL").setLevel(
             logging.WARNING
-        )# Suppress debug messages from PIL
+        )  # Suppress debug messages from PIL
 
 
 class DataManager:
@@ -53,32 +55,32 @@ class DataManager:
 
         # Log initial memory usage
 
-        initial_memory = df.memory_usage(deep=True).sum() / 1024**2  # in MB
+        initial_memory = df.memory_usage(deep=True).sum() / 1024 ** 2  # in MB
         start_time = time.time()
 
         for col, dtype in df.dtypes.items():
             if "int" in dtype.name:
                 if (
-                    df[col].min() > np.iinfo(np.int8).min
-                    and df[col].max() < np.iinfo(np.int8).max
+                        df[col].min() > np.iinfo(np.int8).min
+                        and df[col].max() < np.iinfo(np.int8).max
                 ):
                     df[col] = df[col].astype(np.int8)
                 elif (
-                    df[col].min() > np.iinfo(np.int16).min
-                    and df[col].max() < np.iinfo(np.int16).max
+                        df[col].min() > np.iinfo(np.int16).min
+                        and df[col].max() < np.iinfo(np.int16).max
                 ):
                     df[col] = df[col].astype(np.int16)
                 elif (
-                    df[col].min() > np.iinfo(np.int32).min
-                    and df[col].max() < np.iinfo(np.int32).max
+                        df[col].min() > np.iinfo(np.int32).min
+                        and df[col].max() < np.iinfo(np.int32).max
                 ):
                     df[col] = df[col].astype(np.int32)
             elif "float" in dtype.name:
                 if (
-                    np.finfo(np.float32).min < df[col].min() < np.finfo(np.float32).max
-                    and np.finfo(np.float32).min
-                    < df[col].max()
-                    < np.finfo(np.float32).max
+                        np.finfo(np.float32).min < df[col].min() < np.finfo(np.float32).max
+                        and np.finfo(np.float32).min
+                        < df[col].max()
+                        < np.finfo(np.float32).max
                 ):
                     df[col] = df[col].astype(np.float32)
             elif dtype == object:
@@ -90,7 +92,7 @@ class DataManager:
                     df[col] = df[col].astype("category")
         # Calculate and log memory savings
 
-        final_memory = df.memory_usage(deep=True).sum() / 1024**2  # in MB
+        final_memory = df.memory_usage(deep=True).sum() / 1024 ** 2  # in MB
         memory_reduced = initial_memory - final_memory
         time_taken = time.time() - start_time
 
@@ -100,37 +102,49 @@ class DataManager:
         return df
 
     def load_and_preprocess_data(
-        self, data_dir
+            self, data_dir, test
     ) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame):
         # Load data files
 
         start_time = time.time()
 
         df_calendar = pd.read_csv(os.path.join(data_dir, "calendar.csv"))
-        df_sales_train = pd.read_csv(
-            os.path.join(data_dir, "sales_train_validation.csv")
-        )
-        df_sales_test = pd.read_csv(
-            os.path.join(data_dir, "sales_train_evaluation.csv")
-        )
-        df_sales_prices = pd.read_csv(os.path.join(data_dir, "sell_prices.csv"))
-
+        if test:
+            df_sales_train = pd.read_csv(
+                os.path.join(data_dir, "sales_train_validation_test.csv")
+            )
+            df_sales_eval = pd.read_csv(
+                os.path.join(data_dir, "sales_train_evaluation_test.csv")
+            )
+            df_sales_prices = pd.read_csv(
+                os.path.join(data_dir, "sell_prices_test.csv")
+            )
+        else:
+            df_sales_train = pd.read_csv(
+                os.path.join(data_dir, "sales_train_validation.csv")
+            )
+            df_sales_eval = pd.read_csv(
+                os.path.join(data_dir, "sales_train_evaluation.csv")
+            )
+            df_sales_prices = pd.read_csv(
+                os.path.join(data_dir, "sell_prices.csv")
+            )
         logging.info(f"Data loaded in {time.time() - start_time:.2f} seconds.")
 
         # Downcasting to reduce memory usage
 
         df_calendar = self.downcast(df_calendar)
         df_sales_train = self.downcast(df_sales_train)
-        df_sales_test = self.downcast(df_sales_test)
+        df_sales_eval = self.downcast(df_sales_eval)
         df_sales_prices = self.downcast(df_sales_prices)
 
-        return df_calendar, df_sales_train, df_sales_test, df_sales_prices
+        return df_calendar, df_sales_train, df_sales_eval, df_sales_prices
 
     def training_data_melt_merge(
-        self,
-        df_calendar: pd.DataFrame,
-        df_sales_training: pd.DataFrame,
-        df_sales_prices: pd.DataFrame,
+            self,
+            df_calendar: pd.DataFrame,
+            df_sales_training: pd.DataFrame,
+            df_sales_prices: pd.DataFrame,
     ) -> pd.DataFrame:
 
         # Melt sales data to long format and merge with calendar and prices data
@@ -185,7 +199,7 @@ class DataManager:
         return df_training
 
     def training_to_timeseriesdataset(
-        self, df_training: pd.DataFrame
+            self, df_training: pd.DataFrame
     ) -> TimeSeriesDataSet:
         # Load training data into Pytorch TimeSeriesDataSet
 
@@ -247,7 +261,7 @@ class DataManager:
         return training
 
     def validation_from_timeseriesdataset(
-        self, training: TimeSeriesDataSet, df_training: pd.DataFrame
+            self, training: TimeSeriesDataSet, df_training: pd.DataFrame
     ) -> TimeSeriesDataSet:
         # Create validation and set predict=True to predict the last max_prediction_length point in time for each series
 
@@ -257,7 +271,7 @@ class DataManager:
         return validation
 
     def training_from_file(
-        self, training_path, validation_path
+            self, training_path, validation_path
     ) -> (TimeSeriesDataSet, TimeSeriesDataSet):
         # Load training data from previously created TimeSeriesDataSet file
 
@@ -270,11 +284,11 @@ class DataManager:
         return training, validation
 
     def save_to_timeseriesdataset(
-        self,
-        training: TimeSeriesDataSet,
-        training_path,
-        validation: TimeSeriesDataSet,
-        validation_path,
+            self,
+            training: TimeSeriesDataSet,
+            training_path,
+            validation: TimeSeriesDataSet,
+            validation_path,
     ):
         # Saving training and validation TimeSeriesDataSet for re-use to speed up training process.
 
@@ -290,22 +304,57 @@ class ModelSetup:
         self.training_dataset = training
         self.validation_dataset = validation
 
-    def setup_trainer(self, num_epochs):
+    def setup_trainer(self, source_dir, num_epochs, test):
+        if test:
+            filename = 'test-chkpt-{epoch:02d}-{val_loss:.2f}'
+        else:
+            filename = 'best-chkpt-{epoch:02d}-{val_loss:.2f}'
+        checkpoint_callback = ModelCheckpoint(  # Enable checkpoint callbacks saving to //checkpoint// at every epoch
+            dirpath=source_dir + '//checkpoint',
+            filename=filename,
+            monitor='val_loss',
+            every_n_epochs=1
+        )
         if torch.cuda.is_available():  # Check if a GPU is available and set up
             trainer = pl.Trainer(
-                max_epochs=num_epochs, gradient_clip_val=0.1, devices=1, accelerator="auto"
+                max_epochs=num_epochs,
+                gradient_clip_val=0.12032267313607384,
+                devices=1,
+                accelerator="auto",
+                enable_checkpointing=True,
+                callbacks=[checkpoint_callback],
+                logger=True
             )  # Enabling auto accelerator
-            torch.set_float32_matmul_precision(
-                "medium"
-            )  # Setting matrix multiplication precision to medium
+            # torch.set_float32_matmul_precision("medium")  # Setting matrix multiplication precision to medium
             logging.info("CUDA is available. GPU will be used for training.")
         else:
-            trainer = pl.Trainer(max_epochs=10, gradient_clip_val=0.1)
+            trainer = pl.Trainer(max_epochs=num_epochs,
+                                 gradient_clip_val=0.12032267313607384,
+                                 enable_checkpointing=True,
+                                 callbacks=[checkpoint_callback])
             logging.info("CUDA is not available. Training will default to CPU.")
-        return trainer
+        return trainer, checkpoint_callback
+
+    def setup_model(self, optimal_lr, hidden_size=48, hidden_continuous_size=25):
+        pl.seed_everything(42, workers=True)
+
+        tft = TemporalFusionTransformer.from_dataset(
+            self.training_dataset,
+            # not meaningful for finding the learning rate but otherwise very important
+            learning_rate=optimal_lr,
+            hidden_size=hidden_size,  # most important hyperparameter apart from learning rate
+            # number of attention heads. Set to up to 4 for large datasets
+            attention_head_size=3,
+            dropout=0.18355094084977125,  # between 0.1 and 0.3 are good values: found during hparam optimization
+            hidden_continuous_size=hidden_continuous_size,  # set to <= hidden_size
+            loss=QuantileLoss(),
+            optimizer="Ranger",
+            log_interval=1,
+        )
+
+        return tft
 
     def model_dataloader(self, batch_size=64, worker_size=4, persistent_workers=True):
-        start_time = time.time()
         train_dataloader = self.training_dataset.to_dataloader(
             train=True,
             batch_size=batch_size,
@@ -314,45 +363,39 @@ class ModelSetup:
             timeout=0,
             pin_memory=True,
         )  # Create training data loader for the model using pytorch dataloader
-        logging.info(
-            f"Training data loader created in {time.time() - start_time:.2f} seconds."
-        )
 
-        start_time = time.time()
         val_dataloader = self.validation_dataset.to_dataloader(
             train=False,
             batch_size=batch_size * 10,
             num_workers=worker_size,
             persistent_workers=persistent_workers,
             timeout=0,
-            pin_memory=True
+            pin_memory=True,
         )  # Create validation data loader for the model using pytorch dataloader
-        logging.info(
-            f"Validation data loader created in {time.time() - start_time:.2f} seconds."
-        )
 
         return train_dataloader, val_dataloader
 
 
 class ModelTrainer:
-    def __init__(self, training, trainer, train_dataloader, val_dataloader):
+    def __init__(self, training, trainer, train_dataloader, val_dataloader, tft):
         self.training_dataset = training
         self.trainer = trainer
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
+        self.model = tft
 
     def optimal_learning_rate(
-        self,
-        hidden_size=8,
-        hidden_continuous_size=8,
-        min_lr=1e-6,
-        max_lr=10,
-        num_training=100,
-        mode="exponential",
-        show_fig=False,
+            self,
+            hidden_size=8,
+            hidden_continuous_size=8,
+            min_lr=1e-6,
+            max_lr=10,
+            num_training=100,
+            mode="exponential",
+            show_fig=False,
     ):
         # Find the optimal learning rate
-
+        logging.info(f"Finding optimal learning rate.")
         start_time = time.time()
         pl.seed_everything(42, workers=True)
         tft = TemporalFusionTransformer.from_dataset(
@@ -393,7 +436,7 @@ class ModelTrainer:
 
     def optimize_hyperparameters(self):
         # Hyperparameter optimization with optuna
-
+        logging.info("Finding optimal hyperparameters")
         start_time = time.time()
         study = optimize_hyperparameters(
             self.train_dataloader,
@@ -420,53 +463,58 @@ class ModelTrainer:
 
         with open("test_study.pkl", "wb") as fout:
             pickle.dump(study, fout)  # save study results
-
         return study.best_trial.params
 
-    def train_model(self, optimal_lr, hidden_size=8, hidden_continuous_size=8):
+    def optimize_batch_size(self):
+        # run batch size scaling, result overrides hparams.batch_size
+        logging.info("Finding optimal batch size")
+        start_time = time.time()
+        tuner = Tuner(self.trainer)
+        # call tune to find the batch size
+
+        tuner.scale_batch_size(
+            model=self.model, mode="binsearch"
+        )
+        logging.info(
+            f"Optimal batch size found in {time.time() - start_time:.2f} seconds."
+        )
+        logging.info(f"Optimal batch size: {self.model.batch_size}")
+
+    def train_model(self):
         # Train the TemporalFusionTransformer model w/ seed 42
 
         start_time = time.time()
         pl.seed_everything(42, workers=True)
 
-        tft = TemporalFusionTransformer.from_dataset(
-            self.training_dataset,
-            # not meaningful for finding the learning rate but otherwise very important
-            learning_rate=optimal_lr,
-            hidden_size=hidden_size,  # most important hyperparameter apart from learning rate
-            # number of attention heads. Set to up to 4 for large datasets
-            attention_head_size=1,
-            dropout=0.1,  # between 0.1 and 0.3 are good values
-            hidden_continuous_size=hidden_continuous_size,  # set to <= hidden_size
-            loss=QuantileLoss(),
-            optimizer="Ranger",
-            log_interval=1,
-        )
-        logging.info(f"Number of parameters in network: {tft.size() / 1e3:.1f}k")
-        self.trainer.fit(tft, self.train_dataloader, self.val_dataloader)
+        logging.info(f"Number of parameters in network: {self.model.size() / 1e3:.1f}k")
+        self.trainer.fit(self.model, self.train_dataloader, self.val_dataloader)
         logging.info(f"Model trained in {time.time() - start_time:.2f} seconds.")
-        return
 
 
 def main(
-    source_dir,
-    timeseriesdataset_from_file: bool = False,
-    find_optimal_lr: bool = False,
-    find_optimal_hyperparameters: bool = False,
-    batch_size=64,
-    worker_size=4,
-    persistent_workers=True,
-    num_epochs=10,
-    hidden_size=8,
-    hidden_continuous_size=8,
-    min_lr=1e-6,
-    max_lr=10,
-    num_training=100,
-    mode="exponential",
+        source_dir,
+        test=False,
+        timeseriesdataset_from_file: bool = False,
+        find_optimal_lr: bool = False,
+        find_optimal_hyperparameters: bool = False,
+        find_optimal_batch_size: bool = False,
+        batch_size=64,
+        worker_size=4,
+        persistent_workers=True,
+        num_epochs=10,
+        hidden_size=48,
+        hidden_continuous_size=25,
+        min_lr=1e-6,
+        max_lr=10,
+        num_training=100,
+        mode="exponential",
 ):
-
-    training_path = source_dir + "\\training_timeseriesdataset"
-    validation_path = source_dir + "\\validation_timeseriesdataset"
+    if test:
+        training_path = source_dir + "\\training_timeseriesdataset_test"
+        validation_path = source_dir + "\\validation_timeseriesdataset_test"
+    else:
+        training_path = source_dir + "\\training_timeseriesdataset"
+        validation_path = source_dir + "\\validation_timeseriesdataset"
 
     if timeseriesdataset_from_file:
         # Load pre-processed timeseriesdataset from file
@@ -476,7 +524,7 @@ def main(
         )
     else:
         df_calendar, df_sales_train, df_sales_test, df_sales_prices = (
-            DataManager().load_and_preprocess_data(source_dir + "\\data")
+            DataManager().load_and_preprocess_data(source_dir + "\\data", test)
         )
         # Load data into dataframes
 
@@ -504,20 +552,19 @@ def main(
         # Save training and validation timeseriesdataset to file
 
         del df_calendar, df_sales_train, df_sales_prices, df_training
-    model_setup = ModelSetup(training_timeseriesdataset, validation_timeseriesdataset)
-    trainer = model_setup.setup_trainer(num_epochs)
+    model_setup = ModelSetup(training_timeseriesdataset, validation_timeseriesdataset)  # Init ModelSetup
+    trainer, checkpoint_callback = model_setup.setup_trainer(source_dir, num_epochs, test)
     train_dataloader, val_dataloader = model_setup.model_dataloader(
         batch_size, worker_size, persistent_workers
     )
-
+    optimal_lr = 0.009375247348481247  # Initialize learning rate, found during hyperparameter optimization
+    tft = model_setup.setup_model(optimal_lr, hidden_size=48, hidden_continuous_size=25)
     model_trainer = ModelTrainer(
-        training_timeseriesdataset, trainer, train_dataloader, val_dataloader
-    )
+        training_timeseriesdataset, trainer, train_dataloader, val_dataloader, tft
+    )  # Initialize ModelTrainer
 
-    optimal_lr = 0.03    # Initialize a reasonable learning rate
     if find_optimal_lr:
         try:
-            logging.info(f"Finding optimal learning rate.")
             optimal_lr = model_trainer.optimal_learning_rate(
                 hidden_size=hidden_size,
                 hidden_continuous_size=hidden_continuous_size,
@@ -527,18 +574,25 @@ def main(
                 mode=mode,
                 show_fig=False,
             )
+            tft = model_setup.setup_model(optimal_lr, hidden_size=48, hidden_continuous_size=25)
+            model_trainer = ModelTrainer(
+                training_timeseriesdataset, trainer, train_dataloader, val_dataloader, tft
+            )  # Reinitialize ModelTrainer with new optimal_lr
         except Exception as err:
             logging.info(err)
     logging.info(f"Learning Rate set to {optimal_lr}")
 
     if find_optimal_hyperparameters:
-        logging.info(f"Finding optimal hyperparameters")
         best_trial_params = model_trainer.optimize_hyperparameters()
-    model_trainer.train_model(optimal_lr)  # Fit network
+
+    if find_optimal_batch_size:
+        model_trainer.optimize_batch_size()
+
+    model_trainer.train_model()  # Fit network
 
     # load the best model according to the validation loss
 
-    best_model_path = trainer.checkpoint_callback.best_model_path
+    best_model_path = checkpoint_callback.best_model_path
     best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
 
     # calculate mean absolute error on validation set
