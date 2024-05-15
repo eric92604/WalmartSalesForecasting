@@ -315,6 +315,7 @@ class ModelSetup:
             monitor='val_loss',
             every_n_epochs=1
         )
+        logger = TensorBoardLogger(source_dir + "tb_logs", name="tft")
         if torch.cuda.is_available():  # Check if a GPU is available and set up
             trainer = pl.Trainer(
                 max_epochs=num_epochs,
@@ -323,7 +324,7 @@ class ModelSetup:
                 accelerator="auto",
                 enable_checkpointing=True,
                 callbacks=[checkpoint_callback],
-                logger=True
+                logger=logger
             )  # Enabling auto accelerator
             # torch.set_float32_matmul_precision("medium")  # Setting matrix multiplication precision to medium
             logging.info("CUDA is available. GPU will be used for training.")
