@@ -315,7 +315,6 @@ class ModelSetup:
             monitor='val_loss',
             every_n_epochs=1
         )
-        logger = TensorBoardLogger(source_dir + "tb_logs", name="tft")
         if torch.cuda.is_available():  # Check if a GPU is available and set up
             trainer = pl.Trainer(
                 max_epochs=num_epochs,
@@ -324,9 +323,9 @@ class ModelSetup:
                 accelerator="auto",
                 enable_checkpointing=True,
                 callbacks=[checkpoint_callback],
-                logger=logger
+                logger=True
             )  # Enabling auto accelerator
-            # torch.set_float32_matmul_precision("medium")  # Setting matrix multiplication precision to medium
+            torch.set_float32_matmul_precision("high")  # Setting matrix multiplication precision to high
             logging.info("CUDA is available. GPU will be used for training.")
         else:
             trainer = pl.Trainer(max_epochs=num_epochs,
@@ -513,9 +512,11 @@ def main(
     if test:
         training_path = source_dir + "\\training_timeseriesdataset_test"
         validation_path = source_dir + "\\validation_timeseriesdataset_test"
+        optimal_lr = 0.025703957827688636 # Initialize learning rate, found during hyperparameter optimization
     else:
         training_path = source_dir + "\\training_timeseriesdataset"
         validation_path = source_dir + "\\validation_timeseriesdataset"
+        optimal_lr = 0.009375247348481247 # Initialize learning rate, found during hyperparameter optimization
 
     if timeseriesdataset_from_file:
         # Load pre-processed timeseriesdataset from file
@@ -558,7 +559,6 @@ def main(
     train_dataloader, val_dataloader = model_setup.model_dataloader(
         batch_size, worker_size, persistent_workers
     )
-    optimal_lr = 0.009375247348481247  # Initialize learning rate, found during hyperparameter optimization
     tft = model_setup.setup_model(optimal_lr, hidden_size=48, hidden_continuous_size=25)
     model_trainer = ModelTrainer(
         training_timeseriesdataset, trainer, train_dataloader, val_dataloader, tft
