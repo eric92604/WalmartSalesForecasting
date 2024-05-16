@@ -304,7 +304,7 @@ class ModelSetup:
         self.training_dataset = training
         self.validation_dataset = validation
 
-    def setup_trainer(self, source_dir, num_epochs, test):
+    def setup_trainer(self, source_dir, num_epochs, gradient_clip_val, test):
         if test:
             filename = 'test-chkpt-{epoch:02d}-{val_loss:.2f}'
         else:
@@ -318,7 +318,7 @@ class ModelSetup:
         if torch.cuda.is_available():  # Check if a GPU is available and set up
             trainer = pl.Trainer(
                 max_epochs=num_epochs,
-                gradient_clip_val=0.12032267313607384,
+                gradient_clip_val=gradient_clip_val,
                 devices=1,
                 accelerator="auto",
                 enable_checkpointing=True,
@@ -329,13 +329,13 @@ class ModelSetup:
             logging.info("CUDA is available. GPU will be used for training.")
         else:
             trainer = pl.Trainer(max_epochs=num_epochs,
-                                 gradient_clip_val=0.12032267313607384,
+                                 gradient_clip_val=gradient_clip_val,
                                  enable_checkpointing=True,
                                  callbacks=[checkpoint_callback])
             logging.info("CUDA is not available. Training will default to CPU.")
         return trainer, checkpoint_callback
 
-    def setup_model(self, optimal_lr, hidden_size=48, hidden_continuous_size=25):
+    def setup_model(self, optimal_lr, dropout, hidden_size=48, hidden_continuous_size=25):
         pl.seed_everything(42, workers=True)
 
         tft = TemporalFusionTransformer.from_dataset(
@@ -345,7 +345,7 @@ class ModelSetup:
             hidden_size=hidden_size,  # most important hyperparameter apart from learning rate
             # number of attention heads. Set to up to 4 for large datasets
             attention_head_size=3,
-            dropout=0.18355094084977125,  # between 0.1 and 0.3 are good values: found during hparam optimization
+            dropout=dropout,  # between 0.1 and 0.3 are good values: found during hparam optimization
             hidden_continuous_size=hidden_continuous_size,  # set to <= hidden_size
             loss=QuantileLoss(),
             optimizer="Ranger",
@@ -502,8 +502,6 @@ def main(
         worker_size=4,
         persistent_workers=True,
         num_epochs=10,
-        hidden_size=48,
-        hidden_continuous_size=25,
         min_lr=1e-6,
         max_lr=10,
         num_training=100,
@@ -512,11 +510,20 @@ def main(
     if test:
         training_path = source_dir + "\\training_timeseriesdataset_test"
         validation_path = source_dir + "\\validation_timeseriesdataset_test"
-        optimal_lr = 0.025703957827688636 # Initialize learning rate, found during hyperparameter optimization
+        optimal_lr = 0.002543216015067009  # Initialize learning rate, found during hyperparameter optimization
+        gradient_clip_val = 0.07318571886197764
+        hidden_size = 74
+        hidden_continuous_size = 66
+        dropout = 0.12258521588623608
+
     else:
         training_path = source_dir + "\\training_timeseriesdataset"
         validation_path = source_dir + "\\validation_timeseriesdataset"
-        optimal_lr = 0.009375247348481247 # Initialize learning rate, found during hyperparameter optimization
+        optimal_lr = 0.009375247348481247  # Initialize learning rate, found during hyperparameter optimization
+        gradient_clip_val = 0.12032267313607384
+        hidden_size = 48
+        hidden_continuous_size = 25
+        dropout = 0.18355094084977125
 
     if timeseriesdataset_from_file:
         # Load pre-processed timeseriesdataset from file
