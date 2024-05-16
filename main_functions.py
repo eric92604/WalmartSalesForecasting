@@ -377,7 +377,8 @@ class ModelSetup:
 
 
 class ModelTrainer:
-    def __init__(self, training, trainer, train_dataloader, val_dataloader, tft):
+    def __init__(self, source_dir, training, trainer, train_dataloader, val_dataloader, tft):
+        self.source_dir = source_dir
         self.training_dataset = training
         self.trainer = trainer
         self.train_dataloader = train_dataloader
@@ -480,14 +481,20 @@ class ModelTrainer:
         )
         logging.info(f"Optimal batch size: {self.model.batch_size}")
 
-    def train_model(self):
+    def train_model(self, from_checkpoint):
         # Train the TemporalFusionTransformer model w/ seed 42
 
         start_time = time.time()
         pl.seed_everything(42, workers=True)
 
         logging.info(f"Number of parameters in network: {self.model.size() / 1e3:.1f}k")
-        self.trainer.fit(self.model, self.train_dataloader, self.val_dataloader)
+        if from_checkpoint:
+            self.trainer.fit(model=self.model,
+                             train_dataloaders=self.train_dataloader,
+                             val_dataloaders=self.val_dataloader,
+                             ckpt_path=self.source_dir + '//checkpoint//test-chkpt-epoch=14-val_loss=0.42.ckpt')
+        else:
+            self.trainer.fit(self.model, self.train_dataloader, self.val_dataloader)
         logging.info(f"Model trained in {time.time() - start_time:.2f} seconds.")
 
 
@@ -498,6 +505,7 @@ def main(
         find_optimal_lr: bool = False,
         find_optimal_hyperparameters: bool = False,
         find_optimal_batch_size: bool = False,
+        from_checkpoint: bool = False,
         batch_size=64,
         worker_size=4,
         persistent_workers=True,
@@ -562,13 +570,16 @@ def main(
 
         del df_calendar, df_sales_train, df_sales_prices, df_training
     model_setup = ModelSetup(training_timeseriesdataset, validation_timeseriesdataset)  # Init ModelSetup
-    trainer, checkpoint_callback = model_setup.setup_trainer(source_dir, num_epochs, test)
+    trainer, checkpoint_callback = model_setup.setup_trainer(source_dir, num_epochs, gradient_clip_val, test)
     train_dataloader, val_dataloader = model_setup.model_dataloader(
         batch_size, worker_size, persistent_workers
     )
-    tft = model_setup.setup_model(optimal_lr, hidden_size=48, hidden_continuous_size=25)
+    tft = model_setup.setup_model(optimal_lr,
+                                  dropout=dropout,
+                                  hidden_size=hidden_size,
+                                  hidden_continuous_size=hidden_continuous_size)
     model_trainer = ModelTrainer(
-        training_timeseriesdataset, trainer, train_dataloader, val_dataloader, tft
+        source_dir, training_timeseriesdataset, trainer, train_dataloader, val_dataloader, tft
     )  # Initialize ModelTrainer
 
     if find_optimal_lr:
@@ -582,9 +593,9 @@ def main(
                 mode=mode,
                 show_fig=False,
             )
-            tft = model_setup.setup_model(optimal_lr, hidden_size=48, hidden_continuous_size=25)
+            tft = model_setup.setup_model(optimal_lr)
             model_trainer = ModelTrainer(
-                training_timeseriesdataset, trainer, train_dataloader, val_dataloader, tft
+                source_dir, training_timeseriesdataset, trainer, train_dataloader, val_dataloader, tft
             )  # Reinitialize ModelTrainer with new optimal_lr
         except Exception as err:
             logging.info(err)
@@ -596,7 +607,7 @@ def main(
     if find_optimal_batch_size:
         model_trainer.optimize_batch_size()
 
-    model_trainer.train_model()  # Fit network
+    model_trainer.train_model(from_checkpoint)  # Fit network
 
     # load the best model according to the validation loss
 
