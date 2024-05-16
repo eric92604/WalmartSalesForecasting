@@ -313,7 +313,9 @@ class ModelSetup:
             dirpath=source_dir + '//checkpoint',
             filename=filename,
             monitor='val_loss',
-            every_n_epochs=1
+            verbose=True,
+            every_n_epochs=1,
+            save_last=True
         )
         if torch.cuda.is_available():  # Check if a GPU is available and set up
             trainer = pl.Trainer(
