@@ -55,32 +55,32 @@ class DataManager:
 
         # Log initial memory usage
 
-        initial_memory = df.memory_usage(deep=True).sum() / 1024 ** 2  # in MB
+        initial_memory = df.memory_usage(deep=True).sum() / 1024**2  # in MB
         start_time = time.time()
 
         for col, dtype in df.dtypes.items():
             if "int" in dtype.name:
                 if (
-                        df[col].min() > np.iinfo(np.int8).min
-                        and df[col].max() < np.iinfo(np.int8).max
+                    df[col].min() > np.iinfo(np.int8).min
+                    and df[col].max() < np.iinfo(np.int8).max
                 ):
                     df[col] = df[col].astype(np.int8)
                 elif (
-                        df[col].min() > np.iinfo(np.int16).min
-                        and df[col].max() < np.iinfo(np.int16).max
+                    df[col].min() > np.iinfo(np.int16).min
+                    and df[col].max() < np.iinfo(np.int16).max
                 ):
                     df[col] = df[col].astype(np.int16)
                 elif (
-                        df[col].min() > np.iinfo(np.int32).min
-                        and df[col].max() < np.iinfo(np.int32).max
+                    df[col].min() > np.iinfo(np.int32).min
+                    and df[col].max() < np.iinfo(np.int32).max
                 ):
                     df[col] = df[col].astype(np.int32)
             elif "float" in dtype.name:
                 if (
-                        np.finfo(np.float32).min < df[col].min() < np.finfo(np.float32).max
-                        and np.finfo(np.float32).min
-                        < df[col].max()
-                        < np.finfo(np.float32).max
+                    np.finfo(np.float32).min < df[col].min() < np.finfo(np.float32).max
+                    and np.finfo(np.float32).min
+                    < df[col].max()
+                    < np.finfo(np.float32).max
                 ):
                     df[col] = df[col].astype(np.float32)
             elif dtype == object:
@@ -92,7 +92,7 @@ class DataManager:
                     df[col] = df[col].astype("category")
         # Calculate and log memory savings
 
-        final_memory = df.memory_usage(deep=True).sum() / 1024 ** 2  # in MB
+        final_memory = df.memory_usage(deep=True).sum() / 1024**2  # in MB
         memory_reduced = initial_memory - final_memory
         time_taken = time.time() - start_time
 
@@ -102,7 +102,7 @@ class DataManager:
         return df
 
     def load_and_preprocess_data(
-            self, data_dir, test
+        self, data_dir, test
     ) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame):
         # Load data files
 
@@ -126,9 +126,7 @@ class DataManager:
             df_sales_eval = pd.read_csv(
                 os.path.join(data_dir, "sales_train_evaluation.csv")
             )
-            df_sales_prices = pd.read_csv(
-                os.path.join(data_dir, "sell_prices.csv")
-            )
+            df_sales_prices = pd.read_csv(os.path.join(data_dir, "sell_prices.csv"))
         logging.info(f"Data loaded in {time.time() - start_time:.2f} seconds.")
 
         # Downcasting to reduce memory usage
@@ -141,10 +139,10 @@ class DataManager:
         return df_calendar, df_sales_train, df_sales_eval, df_sales_prices
 
     def training_data_melt_merge(
-            self,
-            df_calendar: pd.DataFrame,
-            df_sales_training: pd.DataFrame,
-            df_sales_prices: pd.DataFrame,
+        self,
+        df_calendar: pd.DataFrame,
+        df_sales_training: pd.DataFrame,
+        df_sales_prices: pd.DataFrame,
     ) -> pd.DataFrame:
 
         # Melt sales data to long format and merge with calendar and prices data
@@ -199,7 +197,7 @@ class DataManager:
         return df_training
 
     def training_to_timeseriesdataset(
-            self, df_training: pd.DataFrame
+        self, df_training: pd.DataFrame
     ) -> TimeSeriesDataSet:
         # Load training data into Pytorch TimeSeriesDataSet
 
@@ -261,7 +259,7 @@ class DataManager:
         return training
 
     def validation_from_timeseriesdataset(
-            self, training: TimeSeriesDataSet, df_training: pd.DataFrame
+        self, training: TimeSeriesDataSet, df_training: pd.DataFrame
     ) -> TimeSeriesDataSet:
         # Create validation and set predict=True to predict the last max_prediction_length point in time for each series
 
@@ -271,7 +269,7 @@ class DataManager:
         return validation
 
     def training_from_file(
-            self, training_path, validation_path
+        self, training_path, validation_path
     ) -> (TimeSeriesDataSet, TimeSeriesDataSet):
         # Load training data from previously created TimeSeriesDataSet file
 
@@ -284,11 +282,11 @@ class DataManager:
         return training, validation
 
     def save_to_timeseriesdataset(
-            self,
-            training: TimeSeriesDataSet,
-            training_path,
-            validation: TimeSeriesDataSet,
-            validation_path,
+        self,
+        training: TimeSeriesDataSet,
+        training_path,
+        validation: TimeSeriesDataSet,
+        validation_path,
     ):
         # Saving training and validation TimeSeriesDataSet for re-use to speed up training process.
 
@@ -306,17 +304,26 @@ class ModelSetup:
 
     def setup_trainer(self, source_dir, num_epochs, gradient_clip_val, test):
         if test:
-            filename = 'test-chkpt-{epoch:02d}-{val_loss:.2f}'
+            filename = "test-chkpt-{epoch:02d}-{val_loss:.2f}"
+            checkpoint_callback = ModelCheckpoint(
+                # Enable checkpoint callbacks saving to \\output\\checkpoint\\ at every epoch
+                dirpath=source_dir + "\\output\\checkpoint\\test",
+                filename=filename,
+                monitor="val_loss",
+                verbose=True,
+                every_n_epochs=1,
+                save_last=True,
+            )
         else:
-            filename = 'best-chkpt-{epoch:02d}-{val_loss:.2f}'
-        checkpoint_callback = ModelCheckpoint(  # Enable checkpoint callbacks saving to //checkpoint// at every epoch
-            dirpath=source_dir + '//checkpoint',
-            filename=filename,
-            monitor='val_loss',
-            verbose=True,
-            every_n_epochs=1,
-            save_last=True
-        )
+            filename = "best-chkpt-{epoch:02d}-{val_loss:.2f}"
+            checkpoint_callback = ModelCheckpoint(
+                dirpath=source_dir + "\\output\\checkpoint",
+                filename=filename,
+                monitor="val_loss",
+                verbose=True,
+                every_n_epochs=1,
+                save_last=True,
+            )
         if torch.cuda.is_available():  # Check if a GPU is available and set up
             trainer = pl.Trainer(
                 max_epochs=num_epochs,
@@ -325,19 +332,25 @@ class ModelSetup:
                 accelerator="auto",
                 enable_checkpointing=True,
                 callbacks=[checkpoint_callback],
-                logger=True
+                logger=True,
             )  # Enabling auto accelerator
-            torch.set_float32_matmul_precision("high")  # Setting matrix multiplication precision to high
+            torch.set_float32_matmul_precision(
+                "high"
+            )  # Setting matrix multiplication precision to high
             logging.info("CUDA is available. GPU will be used for training.")
         else:
-            trainer = pl.Trainer(max_epochs=num_epochs,
-                                 gradient_clip_val=gradient_clip_val,
-                                 enable_checkpointing=True,
-                                 callbacks=[checkpoint_callback])
+            trainer = pl.Trainer(
+                max_epochs=num_epochs,
+                gradient_clip_val=gradient_clip_val,
+                enable_checkpointing=True,
+                callbacks=[checkpoint_callback],
+            )
             logging.info("CUDA is not available. Training will default to CPU.")
         return trainer, checkpoint_callback
 
-    def setup_model(self, optimal_lr, dropout, hidden_size=48, hidden_continuous_size=25):
+    def setup_model(
+        self, optimal_lr, dropout, hidden_size=48, hidden_continuous_size=25
+    ):
         pl.seed_everything(42, workers=True)
 
         tft = TemporalFusionTransformer.from_dataset(
@@ -379,7 +392,9 @@ class ModelSetup:
 
 
 class ModelTrainer:
-    def __init__(self, source_dir, training, trainer, train_dataloader, val_dataloader, tft):
+    def __init__(
+        self, source_dir, training, trainer, train_dataloader, val_dataloader, tft
+    ):
         self.source_dir = source_dir
         self.training_dataset = training
         self.trainer = trainer
@@ -388,16 +403,17 @@ class ModelTrainer:
         self.model = tft
 
     def optimal_learning_rate(
-            self,
-            hidden_size=8,
-            hidden_continuous_size=8,
-            min_lr=1e-6,
-            max_lr=10,
-            num_training=100,
-            mode="exponential",
-            show_fig=False,
+        self,
+        hidden_size=8,
+        hidden_continuous_size=8,
+        min_lr=1e-6,
+        max_lr=10,
+        num_training=100,
+        mode="exponential",
+        show_fig=False,
     ):
         # Find the optimal learning rate
+
         logging.info(f"Finding optimal learning rate.")
         start_time = time.time()
         pl.seed_everything(42, workers=True)
@@ -439,6 +455,7 @@ class ModelTrainer:
 
     def optimize_hyperparameters(self):
         # Hyperparameter optimization with optuna
+
         logging.info("Finding optimal hyperparameters")
         start_time = time.time()
         study = optimize_hyperparameters(
@@ -470,20 +487,19 @@ class ModelTrainer:
 
     def optimize_batch_size(self):
         # run batch size scaling, result overrides hparams.batch_size
+
         logging.info("Finding optimal batch size")
         start_time = time.time()
         tuner = Tuner(self.trainer)
         # call tune to find the batch size
 
-        tuner.scale_batch_size(
-            model=self.model, mode="binsearch"
-        )
+        tuner.scale_batch_size(model=self.model, mode="binsearch")
         logging.info(
             f"Optimal batch size found in {time.time() - start_time:.2f} seconds."
         )
         logging.info(f"Optimal batch size: {self.model.batch_size}")
 
-    def train_model(self, from_checkpoint):
+    def train_model(self, from_checkpoint, test):
         # Train the TemporalFusionTransformer model w/ seed 42
 
         start_time = time.time()
@@ -491,50 +507,58 @@ class ModelTrainer:
 
         logging.info(f"Number of parameters in network: {self.model.size() / 1e3:.1f}k")
         if from_checkpoint:
-            self.trainer.fit(model=self.model,
-                             train_dataloaders=self.train_dataloader,
-                             val_dataloaders=self.val_dataloader,
-                             ckpt_path=self.source_dir + '//checkpoint//test-chkpt-epoch=14-val_loss=0.42.ckpt')
+            if test:
+                self.trainer.fit(
+                    model=self.model,
+                    train_dataloaders=self.train_dataloader,
+                    val_dataloaders=self.val_dataloader,
+                    ckpt_path=self.source_dir + "\\output\\checkpoint\\test\\last.ckpt",
+                )
+            else:
+                self.trainer.fit(
+                    model=self.model,
+                    train_dataloaders=self.train_dataloader,
+                    val_dataloaders=self.val_dataloader,
+                    ckpt_path=self.source_dir + "\\output\\checkpoint\\last.ckpt",
+                )
         else:
             self.trainer.fit(self.model, self.train_dataloader, self.val_dataloader)
         logging.info(f"Model trained in {time.time() - start_time:.2f} seconds.")
 
 
 def main(
-        source_dir,
-        test=False,
-        timeseriesdataset_from_file: bool = False,
-        find_optimal_lr: bool = False,
-        find_optimal_hyperparameters: bool = False,
-        find_optimal_batch_size: bool = False,
-        from_checkpoint: bool = False,
-        batch_size=64,
-        worker_size=4,
-        persistent_workers=True,
-        num_epochs=10,
-        min_lr=1e-6,
-        max_lr=10,
-        num_training=100,
-        mode="exponential",
+    source_dir,
+    test=False,
+    timeseriesdataset_from_file: bool = False,
+    find_optimal_lr: bool = False,
+    find_optimal_hyperparameters: bool = False,
+    find_optimal_batch_size: bool = False,
+    from_checkpoint: bool = False,
+    batch_size=64,
+    worker_size=4,
+    persistent_workers=True,
+    num_epochs=10,
+    min_lr=1e-6,
+    max_lr=10,
+    num_training=100,
+    mode="exponential",
 ):
     if test:
-        training_path = source_dir + "\\training_timeseriesdataset_test"
-        validation_path = source_dir + "\\validation_timeseriesdataset_test"
+        training_path = source_dir + "\\output\\training_timeseriesdataset_test"
+        validation_path = source_dir + "\\output\\validation_timeseriesdataset_test"
         optimal_lr = 0.002543216015067009  # Initialize learning rate, found during hyperparameter optimization
         gradient_clip_val = 0.07318571886197764
         hidden_size = 74
         hidden_continuous_size = 66
         dropout = 0.12258521588623608
-
     else:
-        training_path = source_dir + "\\training_timeseriesdataset"
-        validation_path = source_dir + "\\validation_timeseriesdataset"
+        training_path = source_dir + "\\output\\training_timeseriesdataset"
+        validation_path = source_dir + "\\output\\validation_timeseriesdataset"
         optimal_lr = 0.009375247348481247  # Initialize learning rate, found during hyperparameter optimization
         gradient_clip_val = 0.12032267313607384
         hidden_size = 48
         hidden_continuous_size = 25
         dropout = 0.18355094084977125
-
     if timeseriesdataset_from_file:
         # Load pre-processed timeseriesdataset from file
 
@@ -571,17 +595,28 @@ def main(
         # Save training and validation timeseriesdataset to file
 
         del df_calendar, df_sales_train, df_sales_prices, df_training
-    model_setup = ModelSetup(training_timeseriesdataset, validation_timeseriesdataset)  # Init ModelSetup
-    trainer, checkpoint_callback = model_setup.setup_trainer(source_dir, num_epochs, gradient_clip_val, test)
+    model_setup = ModelSetup(
+        training_timeseriesdataset, validation_timeseriesdataset
+    )  # Init ModelSetup
+    trainer, checkpoint_callback = model_setup.setup_trainer(
+        source_dir, num_epochs, gradient_clip_val, test
+    )
     train_dataloader, val_dataloader = model_setup.model_dataloader(
         batch_size, worker_size, persistent_workers
     )
-    tft = model_setup.setup_model(optimal_lr,
-                                  dropout=dropout,
-                                  hidden_size=hidden_size,
-                                  hidden_continuous_size=hidden_continuous_size)
+    tft = model_setup.setup_model(
+        optimal_lr,
+        dropout=dropout,
+        hidden_size=hidden_size,
+        hidden_continuous_size=hidden_continuous_size,
+    )
     model_trainer = ModelTrainer(
-        source_dir, training_timeseriesdataset, trainer, train_dataloader, val_dataloader, tft
+        source_dir,
+        training_timeseriesdataset,
+        trainer,
+        train_dataloader,
+        val_dataloader,
+        tft,
     )  # Initialize ModelTrainer
 
     if find_optimal_lr:
@@ -597,7 +632,12 @@ def main(
             )
             tft = model_setup.setup_model(optimal_lr)
             model_trainer = ModelTrainer(
-                source_dir, training_timeseriesdataset, trainer, train_dataloader, val_dataloader, tft
+                source_dir,
+                training_timeseriesdataset,
+                trainer,
+                train_dataloader,
+                val_dataloader,
+                tft,
             )  # Reinitialize ModelTrainer with new optimal_lr
         except Exception as err:
             logging.info(err)
@@ -605,11 +645,9 @@ def main(
 
     if find_optimal_hyperparameters:
         best_trial_params = model_trainer.optimize_hyperparameters()
-
     if find_optimal_batch_size:
         model_trainer.optimize_batch_size()
-
-    model_trainer.train_model(from_checkpoint)  # Fit network
+    model_trainer.train_model(from_checkpoint, test)  # Fit network
 
     # load the best model according to the validation loss
 
@@ -622,3 +660,8 @@ def main(
         val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="gpu")
     )
     MAE()(predictions.output, predictions.y)
+
+    for idx in range(10):  # plot 10 examples
+        raw_predictions = best_tft.predict(val_dataloader, mode="raw", return_x=True)
+    interpretation = best_tft.interpret_output(raw_predictions.output, reduction="sum")
+    best_tft.plot_interpretation(interpretation)
